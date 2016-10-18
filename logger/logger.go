@@ -20,11 +20,16 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 // The oryx logger package provides connection-oriented log service.
-//		Logger.Println(Context, ...), the context is the connection info, can be nil.
+//		logger.Info.Println(Context, ...)
+//		logger.Trace.Println(Context, ...)
+//		logger.Warn.Println(Context, ...)
+//		logger.Error.Println(Context, ...)
+// @remark the Context is optional thus can be nil.
 package logger
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -62,22 +67,81 @@ func (v *loggerPlus) Println(ctx Context, a ...interface{}) {
 	v.logger.Println(a...)
 }
 
-// the application loggers
-// info, the verbose info level, very detail log, the lowest level, to discard.
-var Info Logger = NewLoggerPlus(log.New(ioutil.Discard, logInfoLabel, log.LstdFlags))
+// Info, the verbose info level, very detail log, the lowest level, to discard.
+var Info Logger
 
-// trace, the trace level, something important, the default log level, to stdout.
-var Trace Logger = NewLoggerPlus(log.New(os.Stdout, logTraceLabel, log.LstdFlags))
+// Alias for Info level println.
+func I(ctx Context, a ...interface{}) {
+	Info.Println(ctx, a...)
+}
 
-// warn, the warning level, dangerous information, to stderr.
-var Warn Logger = NewLoggerPlus(log.New(os.Stderr, logWarnLabel, log.LstdFlags))
+// Trace, the trace level, something important, the default log level, to stdout.
+var Trace Logger
 
-// error, the error level, fatal error things, ot stderr.
-var Error Logger = NewLoggerPlus(log.New(os.Stderr, logErrorLabel, log.LstdFlags))
+// Alias for Trace level println.
+func T(ctx Context, a ...interface{}) {
+	Trace.Println(ctx, a...)
+}
 
-// the logger for gsrs.
+// Warn, the warning level, dangerous information, to stderr.
+var Warn Logger
+
+// Alias for Warn level println.
+func W(ctx Context, a ...interface{}) {
+	Warn.Println(ctx, a...)
+}
+
+// Error, the error level, fatal error things, ot stderr.
+var Error Logger
+
+// Alias for Error level println.
+func E(ctx Context, a ...interface{}) {
+	Error.Println(ctx, a...)
+}
+
+// The logger for oryx.
 type Logger interface {
 	// Println for logger plus,
 	// @param ctx the connection-oriented context, or nil to ignore.
 	Println(ctx Context, a ...interface{})
+}
+
+func init() {
+	Info = NewLoggerPlus(log.New(ioutil.Discard, logInfoLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Trace = NewLoggerPlus(log.New(os.Stdout, logTraceLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Warn = NewLoggerPlus(log.New(os.Stderr, logWarnLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Error = NewLoggerPlus(log.New(os.Stderr, logErrorLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+}
+
+// Switch the underlayer io.
+// @remark user must close previous io for logger never close it.
+func Switch(w io.Writer) {
+	// TODO: support level, default to trace here.
+	Info = NewLoggerPlus(log.New(ioutil.Discard, logInfoLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Trace = NewLoggerPlus(log.New(w, logTraceLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Warn = NewLoggerPlus(log.New(w, logWarnLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Error = NewLoggerPlus(log.New(w, logErrorLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+
+	if w, ok := w.(io.Closer); ok {
+		previousIo = w
+	}
+}
+
+// The previous underlayer io for logger.
+var previousIo io.Closer
+
+// The interface io.Closer
+// Cleanup the logger, discard any log util switch to fresh writer.
+func Close() (err error) {
+	Info = NewLoggerPlus(log.New(ioutil.Discard, logInfoLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Trace = NewLoggerPlus(log.New(ioutil.Discard, logTraceLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Warn = NewLoggerPlus(log.New(ioutil.Discard, logWarnLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+	Error = NewLoggerPlus(log.New(ioutil.Discard, logErrorLabel, log.Ldate|log.Ltime|log.Lmicroseconds))
+
+	if previousIo != nil {
+		err = previousIo.Close()
+		previousIo = nil
+	}
+
+	return
 }
